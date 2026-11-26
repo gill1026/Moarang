@@ -1,0 +1,16 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+
+function fixture(){
+ const nodes=new Map();const node=s=>{if(!nodes.has(s))nodes.set(s,{innerHTML:'',textContent:'',style:{setProperty(){}},value:'',checked:true,close(){},showModal(){},addEventListener(){},getBoundingClientRect(){return {left:0,top:0,width:420,height:800}},querySelectorAll(){return []}});return nodes.get(s)};
+ const store=new Map();const context=vm.createContext({console,structuredClone,crypto,Intl,Date,JSON,Boolean,String,Number,Math,Array,FormData,AbortController,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:k=>store.get(k),setItem:(k,v)=>store.set(k,v)},document:{querySelector:node},window:{addEventListener(){},visualViewport:{addEventListener(){}}},getComputedStyle:()=>({borderRadius:'30px'}),ResizeObserver:class{observe(){}}});
+ vm.runInContext(readFileSync('app.js','utf8'),context);vm.runInContext(readFileSync('activities.js','utf8'),context);
+ return {run:s=>vm.runInContext(s,context),node,store};
+}
+test('activity create, edit, publish, persistence and delete integrate into profile',()=>{
+ const {run,node,store}=fixture();run('activityEditor()');node('#activity-title').value='테스트 활동';node('#activity-summary').value='팀 화면 구현';node('#activity-contributions').value='프론트엔드 구현';node('#activity-skills').value='JavaScript';run('saveActivity({preventDefault(){}})');assert.equal(run('data.activities.length'),1);assert.equal(JSON.parse(store.get('moarang-v1')).activities[0].title,'테스트 활동');run('publishActivity(data.activities[0].id); profile()');assert.match(node('#main').innerHTML,/테스트 활동/);run('activityEditor(data.activities[0].id)');node('#activity-title').value='수정된 활동';node('#activity-summary').value='수정한 요약';run('saveActivity({preventDefault(){}})');assert.equal(run('data.activities[0].title'),'수정된 활동');run('deleteActivity(data.activities[0].id)');assert.equal(run('data.activities.length'),0);
+});
+test('recruitment detail, profile editing and application expose intended controls',()=>{const {run,node}=fixture();run('editProfile()');assert.match(node('#modal-content').innerHTML,/가능한 역할/);run('detail(data.posts.find(p=>!p.mine&&!p.closed).id)');assert.match(node('#main').innerHTML,/활동 방식/);assert.match(node('#main').innerHTML,/이 팀에 지원하기/);run('apply(data.posts.find(p=>!p.mine&&!p.closed).id)');assert.match(node('#modal-content').innerHTML,/함께 보여줄 활동/);assert.match(node('#modal-content').innerHTML,/지원서 보내기/)});
+test('campus card summarizes public evidence without leaking private activities',()=>{const {run,node}=fixture();run(`data.profile.skills='JavaScript, javascript';data.activities=[{id:'public',title:'공개 활동',summary:'화면 구현',skills:['JavaScript','CSS'],contributions:['프론트엔드'],published:true,updatedAt:'2026-11-26'},{id:'private',title:'비공개 제목',summary:'비공개 요약',skills:['비공개 스킬'],contributions:[],published:false}];businessCard()`);const html=node('#main').innerHTML;assert.match(html,/공개 활동/);assert.equal(node('#nav').hidden,false);assert.match(html,/나의 기여/);assert.doesNotMatch(html,/비공개 제목|비공개 요약|비공개 스킬/);assert.equal(run('campusCardContent().skills.length'),2);run('home()');assert.match(node('#main').innerHTML,/새로운 활동 추가/);assert.match(node('#main').innerHTML,/활동 목록/)});
